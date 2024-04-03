@@ -6,6 +6,7 @@ import sqlite3
 import io
 import re
 import sys
+import pickle
 
 import requests
 from geopy.geocoders import Nominatim
@@ -85,6 +86,8 @@ def dataframe_from_lines(list_lines):
 
     return df
 
+
+
 #Saving csv and sql
 def save_csv(df, csv_file):
     df.to_csv(csv_file, index=False)
@@ -92,15 +95,35 @@ def save_csv(df, csv_file):
 def save_sql(df, conn):
     df.to_sql('incidents', conn, if_exists='replace', index=False)
 
+#Caching weather data
+def load_cache(cache_file):
+    if os.path.exists(cache_file):
+        with open(cache_file, 'rb') as f:
+            return pickle.load(f)
+    return {}
+
+def save_cache(cache, cache_file):
+    with open(cache_file, 'wb') as f:
+        pickle.dump(cache, f)
+
+geocode_cache = load_cache('geocode_cache.pkl')
+weather_cache = load_cache('weather_cache.pkl')
+
+
 #Location latitude and longitudes and side of town
 
 def get_lat_lon(incident_location):
+    if incident_location in geocode_cache:
+        return geocode_cache[incident_location]
+    
     geolocator = Nominatim(user_agent="assignment2", timeout=10)
     location = geolocator.geocode(incident_location + ', Norman, OK')
     if location:
-        return (location.latitude, location.longitude)
+        result = (location.latitude, location.longitude)
     else:
-        return (None, None)    
+        result = (None, None)
+    geocode_cache[incident_location] = result
+    return result    
 
 
 def get_side_of_town(latitude, longitude):
@@ -131,6 +154,12 @@ def get_side_of_town(latitude, longitude):
 
 #weather data
 def get_weather(latitude, longitude, datetime):
+    if latitude is None or longitude is None:
+        return None
+    key = (latitude, longitude, datetime.strftime('%Y-%m-%d'))
+    if key in weather_cache:
+        return weather_cache[key]
+
     date_str = datetime.strftime('%Y-%m-%d')
     time_str = datetime.strftime('%H')
 
@@ -141,15 +170,23 @@ def get_weather(latitude, longitude, datetime):
         'end': date_str,
         'hourly': 'weather_code'
     }
+    try:
+        response = requests.get('https://archive-api.open-meteo.com/v1/archive', params=params)
+        if response.status_code == 200:
+            data = response.json()
+            weather_code = data['hourly']['weather_code'][int(time_str)]
+            # return weather_code
+        else:
+            # return None
+            weather_code = None
+    except requests.exceptions.RequestException as e:
+        weather_code = None
 
-    response = requests.get('https://archive-api.open-meteo.com/v1/archive', params=params)
-
-    if response.status_code == 200:
-        data = response.json()
-        weather_code = data['hourly']['weather_code'][int(time_str)]
-        return weather_code
-    else:
-        return None
+    weather_cache[key] = weather_code
+    return weather_code
+   
+save_cache(geocode_cache, 'geocode_cache.pkl')
+save_cache(weather_cache, 'weather_cache.pkl')
     
     #     print("Data received:", data)  # Debugging line
     #     try:
@@ -185,6 +222,7 @@ def check_emsstat(df, index, ori_colunm = 'incident_ori', time_column = 'inciden
             emsstat_dict[key] = row['incident_ori'] == 'EMSSTAT'
 
     df['EMSSTAT'] = df.apply(lambda row: emsstat_dict[(row['incident_time'], row['incident_location'])], axis=1)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Process PDF for incident data.')
