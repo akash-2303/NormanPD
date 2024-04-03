@@ -4,6 +4,8 @@ from pypdf import PdfReader
 import os
 import sqlite3
 import io
+import re
+import sys
 
 import requests
 from geopy.geocoders import Nominatim
@@ -30,7 +32,7 @@ def lines_from_pages(pdf_reader):
     return list_lines
 
 #Read PDF from file path (Temporarily working with single file)
-file_path = "C:\\Users\\Akash Balaji\\Downloads\\DATA ENGINEERING\\cis6930sp24-assignment2\\2024-02-01_daily_incident_summary.pdf"
+file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-02-01_daily_incident_summary.pdf"
 def get_pdf_reader(file_path):
     pdf_data = open(file_path, "rb")
     pdf_reader = PdfReader(pdf_data)
@@ -62,11 +64,15 @@ def dataframe_from_lines(list_lines):
     #weather information
     df['weather_code'] = df.apply(lambda row: get_weather(row['latitude'], row['longitude'], row['incident_time']), axis=1)
 
-    #Counting frequency of each nature for incident_rank
+    # Counting frequency of each nature for incident_rank
     nature_counts = df['nature'].value_counts().reset_index()
     nature_counts.columns = ['nature', 'nature_count']
     df = df.merge(nature_counts, on='nature', how='left')
-    df['incident_rank'] = df['nature_count'].rank(method = 'min', ascending=False).astype(int)
+
+    # Fill NaN values in nature_count with 0 (or another appropriate value) before ranking
+    df['nature_count'] = df['nature_count'].fillna(0)
+
+    df['incident_rank'] = df['nature_count'].rank(method='min', ascending=False).astype(int)
 
     #Counting frequency of location rank
     location_counts = df['incident_location'].value_counts().reset_index()
@@ -89,7 +95,7 @@ def save_sql(df, conn):
 #Location latitude and longitudes and side of town
 
 def get_lat_lon(incident_location):
-    geolocator = Nominatim(user_agent="assignment2")
+    geolocator = Nominatim(user_agent="assignment2", timeout=10)
     location = geolocator.geocode(incident_location + ', Norman, OK')
     if location:
         return (location.latitude, location.longitude)
@@ -140,23 +146,73 @@ def get_weather(latitude, longitude, datetime):
 
     if response.status_code == 200:
         data = response.json()
-        weather_code = data[0]['hourly']['weather_code'][int(time_str)]
+        weather_code = data['hourly']['weather_code'][int(time_str)]
         return weather_code
     else:
         return None
     
+    #     print("Data received:", data)  # Debugging line
+    #     try:
+    #         weather_code = data['hourly']['weather_code'][int(time_str)]
+    #         return weather_code
+    #     except KeyError as e:
+    #         print("KeyError:", e)
+    #         print("Data structure might be different than expected.")
+    #         return None
+    # else:
+    #     return None
+    
 #EMSSTAT
 def check_emsstat(df, index, ori_colunm = 'incident_ori', time_column = 'incident_time', location_column = 'incident_location'):
-    current_time = df.loc[index, time_column]
-    current_location = df.loc[index, location_column]
+    # current_time = df.loc[index, time_column]
+    # current_location = df.loc[index, location_column]
 
-    check_indices = list(range(max(index - 2, 0), min(index + 3, len(df))))
+    # check_indices = list(range(max(index - 2, 0), min(index + 3, len(df))))
 
-    for i in check_indices:
-        if i != index:
-            if df.loc[i, time_column] == current_time and df.loc[i, location_column] == current_location:
-                if df.loc[i, ori_colunm] == 'EMSSTAT':
-                    return True
+    # for i in check_indices:
+    #     if i != index:
+    #         if df.loc[i, time_column] == current_time and df.loc[i, location_column] == current_location:
+    #             if df.loc[i, ori_colunm] == 'EMSSTAT':
+    #                 return True
                 
-    return False
+    # return False
+    emsstat_dict = {}
+    for index, row in df.iterrows():
+        key = (row['incident_time'], row['incident_location'])
+        if key not in emsstat_dict:
+            emsstat_dict[key] = row['incident_ori'] == 'EMSSTAT'
+        elif not emsstat_dict[key]:
+            emsstat_dict[key] = row['incident_ori'] == 'EMSSTAT'
 
+    df['EMSSTAT'] = df.apply(lambda row: emsstat_dict[(row['incident_time'], row['incident_location'])], axis=1)
+
+def main():
+    parser = argparse.ArgumentParser(description='Process PDF for incident data.')
+    parser.add_argument('--csv', type=str, help='Path to save the CSV file')
+    parser.add_argument('--db', type=str, help='Path to the SQLite database file')
+    args = parser.parse_args()
+
+    # Hardcoded PDF path
+    file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-02-01_daily_incident_summary.pdf"
+    pdf_reader = get_pdf_reader(file_path)
+    list_lines = lines_from_pages(pdf_reader)
+    df = dataframe_from_lines(list_lines)
+
+    if args.csv:
+        save_csv(df, args.csv)
+
+    if args.db:
+        conn = get_db_connection(args.db)
+        save_sql(df, conn)
+        conn.close()
+
+    # Ensure all required columns are included
+    output_columns = ['day_of_week', 'time_of_day', 'weather_code', 'location_rank', 'side_of_town', 'incident_rank', 'nature', 'EMSSTAT']
+    final_df = df[output_columns]
+    
+    # Output the DataFrame to stdout with the header
+    final_df.to_csv(sys.stdout, index=False, header=True, sep='\t')
+
+
+if __name__ == '__main__':
+    main()
