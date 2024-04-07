@@ -7,6 +7,7 @@ import io
 import re
 import sys
 import pickle
+import hashlib
 
 import requests
 from geopy.geocoders import Nominatim
@@ -82,7 +83,8 @@ def dataframe_from_lines(list_lines):
     df['location_rank'] = df['location_count'].rank(method = 'min', ascending=False).astype(int)
 
     #Checking for EMSSTAT
-    df['EMSSTAT'] = df.apply(lambda row: check_emsstat(df, row.name), axis=1)
+    # df['EMSSTAT'] = df.apply(lambda row: check_emsstat(df, row.name), axis=1)
+    check_emsstat(df)
 
     return df
 
@@ -97,13 +99,13 @@ def save_sql(df, conn):
 
 #Caching weather data
 def load_cache(cache_file):
-    if os.path.exists(cache_file):
-        with open(cache_file, 'rb') as f:
-            return pickle.load(f)
+    if os.path.exists(os.path.join("../resources",cache_file)):
+         with open(os.path.join("../resources",cache_file), 'rb') as f:
+            return dict(pickle.load(f))
     return {}
 
 def save_cache(cache, cache_file):
-    with open(cache_file, 'wb') as f:
+    with open(os.path.join("../resources",cache_file), 'wb') as f:
         pickle.dump(cache, f)
 
 geocode_cache = load_cache('geocode_cache.pkl')
@@ -200,7 +202,7 @@ save_cache(weather_cache, 'weather_cache.pkl')
     #     return None
     
 #EMSSTAT
-def check_emsstat(df, index, ori_colunm = 'incident_ori', time_column = 'incident_time', location_column = 'incident_location'):
+def check_emsstat(df, ori_colunm = 'incident_ori', time_column = 'incident_time', location_column = 'incident_location'):
     # current_time = df.loc[index, time_column]
     # current_location = df.loc[index, location_column]
 
@@ -217,11 +219,36 @@ def check_emsstat(df, index, ori_colunm = 'incident_ori', time_column = 'inciden
     for index, row in df.iterrows():
         key = (row['incident_time'], row['incident_location'])
         if key not in emsstat_dict:
-            emsstat_dict[key] = row['incident_ori'] == 'EMSSTAT'
-        elif not emsstat_dict[key]:
-            emsstat_dict[key] = row['incident_ori'] == 'EMSSTAT'
+            emsstat_dict[key] = []
+        emsstat_dict[key].append((index, row['incident_ori'] == 'EMSSTAT'))
 
-    df['EMSSTAT'] = df.apply(lambda row: emsstat_dict[(row['incident_time'], row['incident_location'])], axis=1)
+    df['EMSSTAT'] = False
+    for key, incidents in emsstat_dict.items():
+        if any(ori for idx, ori in incidents if ori):
+            for idx, _ in incidents:
+                df.at[idx, 'EMSSTAT'] = True
+
+#Caching final results
+def get_pdf_hash(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
+            file_contents = f.read()
+        return hashlib.md5(file_contents).hexdigest()
+    return None
+
+def load_final_df_cache(cache_file):
+    cache_file_path = os.path.join("../resources", cache_file)
+    if os.path.exists(cache_file_path):
+        with open(cache_file_path, 'rb') as f:
+            return pickle.load(f)
+    return None
+
+def save_final_df_cache(df, cache_file):
+    cache_file_path = os.path.join("../resources", cache_file)
+    os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)  # Create the directory if it doesn't exist
+    with open(cache_file_path, 'wb') as f:
+        pickle.dump(df, f)
+
 
 
 def main():
@@ -232,9 +259,21 @@ def main():
 
     # Hardcoded PDF path
     file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-02-01_daily_incident_summary.pdf"
-    pdf_reader = get_pdf_reader(file_path)
-    list_lines = lines_from_pages(pdf_reader)
-    df = dataframe_from_lines(list_lines)
+
+
+    pdf_hash = get_pdf_hash(file_path)
+
+    final_df_cache_file = f'final_df_cache_{pdf_hash}.pkl'
+    final_df = load_final_df_cache(final_df_cache_file)
+
+    if final_df is None: 
+        pdf_reader = get_pdf_reader(file_path)
+        list_lines = lines_from_pages(pdf_reader)
+        df = dataframe_from_lines(list_lines)
+        final_df = df
+        save_final_df_cache(final_df, final_df_cache_file)
+    else:
+        df = final_df
 
     if args.csv:
         save_csv(df, args.csv)
@@ -246,11 +285,11 @@ def main():
 
     # Ensure all required columns are included
     output_columns = ['day_of_week', 'time_of_day', 'weather_code', 'location_rank', 'side_of_town', 'incident_rank', 'nature', 'EMSSTAT']
-    final_df = df[output_columns]
+    final_df = final_df[output_columns]
     
     # Output the DataFrame to stdout with the header
-    final_df.to_csv(sys.stdout, index=False, header=True, sep='\t')
-
-
+    #final_df.to_csv(sys.stdout, index=False, header=True)
+    print(final_df.to_string(index=False))
+    
 if __name__ == '__main__':
     main()
