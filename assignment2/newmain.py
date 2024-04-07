@@ -168,8 +168,8 @@ def get_weather(latitude, longitude, datetime):
     params = {
         'latitude': latitude,
         'longitude': longitude,
-        'start': date_str,
-        'end': date_str,
+        'start_date': date_str,
+        'end_date': date_str,
         'hourly': 'weather_code'
     }
     try:
