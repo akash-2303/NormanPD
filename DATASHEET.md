@@ -1,4 +1,4 @@
-This datasheet follows the Aether Data Docmentation template. 
+This datasheet follows the Aether Data Docmentation template. The datasheet/data I worked with is the norman pd files, specifically with the incident summary files and can be found at https://www.normanok.gov/public-safety/police-department/crime-prevention-data/department-activity-reports
 
 BASICS: CONTACT, DISTRIBUTION, ACCESS
 1. Dataset name
@@ -18,6 +18,7 @@ This information is made public and can be accessed by anyone.
 You can use their link : https://www.normanok.gov/public-safety/police-department/crime-prevention-data/department-activity-reports
 
 5. How can the dataset be accessed?
+One way to access dataset is by utilizing link and downloading the PDFs. 
 
 DATASET CONTENTS
 6. What are the contents of this dataset? Please include enough detail that someone unfamiliar
@@ -51,11 +52,11 @@ DATA COLLECTION PROCEDURES
 9. How was the data collected?
 Describe data collection procedures and instruments.
 Describe who collected the data (e.g., contractors).
-Data was collected after every record of an arrest or incident goes to the record. I am guessing data was maintained by the IT team after any incident to make sure they match with their private database that might contain more details associated with the individual. 
+Data was collected after every record of an arrest or incident goes to the record. I am guessing data was maintained by the IT team after any incident to make sure they match with their private database that might contain more details associated with the individual. However how exactly they were collected, I do not know. 
 
 10. Describe considerations taken for responsible and ethical data collection (e.g., procedures, use
 of crowd workers, recruitment, compensation).
-
+Since this is data collected by police department, it might not involve traditional data collection procedures. 
 
 11. Describe procedures and include language used for getting explicit consent for data collection
 and use, and/or revoking consent (e.g., for future uses or for certain uses). If explicit consent
