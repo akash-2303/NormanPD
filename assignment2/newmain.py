@@ -131,7 +131,7 @@ def save_sql(df, conn):
 
 
 #Location latitude and longitudes and side of town
-geocoder = OpenCageGeocode('06093f9c5fcf4b6caf862218f0091f8f')
+#geocoder = OpenCageGeocode('06093f9c5fcf4b6caf862218f0091f8f')
 
 # def get_lat_lon_cache(incident_location):
 #     if os.path.exists(os.path.join("resources", 'geocode_cache.pkl')):
