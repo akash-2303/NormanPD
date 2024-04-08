@@ -133,11 +133,11 @@ def save_sql(df, conn):
 #Location latitude and longitudes and side of town
 geocoder = OpenCageGeocode('06093f9c5fcf4b6caf862218f0091f8f')
 
-def get_lat_lon_cache(incident_location):
-    if os.path.exists(os.path.join("resources", 'geocode_cache.pkl')):
-        return pickle.load(open(os.path.join("resources", 'geocode_cache.pkl'), 'rb'))
-    else:
-        return {}
+# def get_lat_lon_cache(incident_location):
+#     if os.path.exists(os.path.join("resources", 'geocode_cache.pkl')):
+#         return pickle.load(open(os.path.join("resources", 'geocode_cache.pkl'), 'rb'))
+#     else:
+#         return {}
     
     
 # def get_lat_lon(incident_location):
@@ -161,11 +161,9 @@ def get_lat_lon_cache(incident_location):
 #         return (None, None)
 
 def get_lat_lon(incident_location):
-    # if incident_location in geocode_cache:
-    #     return geocode_cache[incident_location]
-    cache = get_lat_lon_cache(incident_location)
-    if incident_location in cache:
-        return cache[incident_location]
+    global geocode_cache
+    if incident_location in geocode_cache:
+        return geocode_cache[incident_location]
     url = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
     params = {
         "f":"pjson",
@@ -180,8 +178,8 @@ def get_lat_lon(incident_location):
                 return (None, None)
             latitude = data['candidates'][0]['location']['y']
             longitude = data['candidates'][0]['location']['x']
-            cache[incident_location] = (latitude, longitude)
-            pickle.dump(cache, open(os.path.join("resources", 'geocode_cache.pkl'), 'wb'))
+            geocode_cache[incident_location] = (latitude, longitude)
+            # pickle.dump(cache, open(os.path.join("resources", 'geocode_cache.pkl'), 'wb'))
             return (latitude, longitude)
         else:
             return (None, None)
@@ -228,14 +226,15 @@ def get_side_of_town(latitude, longitude):
     else:
         return 'Unknown'
 
-def get_weather_cache(latitude, longitude, date):
-    if os.path.exists(os.path.join("resources", 'weather_cache.pkl')):
-        return pickle.load(open(os.path.join("resources", 'weather_cache.pkl'), 'rb'))
-    else:
-        return {}
+# def get_weather_cache(latitude, longitude, date):
+#     if os.path.exists(os.path.join("resources", 'weather_cache.pkl')):
+#         return pickle.load(open(os.path.join("resources", 'weather_cache.pkl'), 'rb'))
+#     else:
+#         return {}
     
 #weather data
 def get_weather(latitude, longitude, datetime):
+    global weather_cache
     if latitude is None or longitude is None:
         return None
     key = (latitude, longitude, datetime.strftime('%Y-%m-%d'))
@@ -244,9 +243,9 @@ def get_weather(latitude, longitude, datetime):
 
     date_str = datetime.strftime('%Y-%m-%d')
     time_str = datetime.strftime('%H')
-    cache = get_weather_cache(latitude, longitude, date_str)
-    if key in cache:
-        return cache[key]
+    # cache = get_weather_cache(latitude, longitude, date_str)
+    if key in weather_cache:
+        return weather_cache[key]
     else:
         params = {
             'latitude': latitude,
@@ -266,8 +265,8 @@ def get_weather(latitude, longitude, datetime):
                 weather_code = None
         except requests.exceptions.RequestException as e:
             weather_code = None
-        cache[key] = weather_code
-        pickle.dump(cache, open(os.path.join("resources", 'weather_cache.pkl'), 'wb'))
+        weather_cache[key] = weather_code
+        # pickle.dump(weather_cache, open(os.path.join("resources", 'weather_cache.pkl'), 'wb'))
         # weather_cache[key] = weather_code
         return weather_code
    
@@ -381,4 +380,19 @@ def main():
         sys.stdout.write("\t".join(map(str, row)) + "\n")
     
 if __name__ == '__main__':
+    global geocode_cache
+    global weather_cache
+    if os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'geocode_cache.pkl')):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'geocode_cache.pkl'), 'rb') as file:
+            geocode_cache = pickle.load(file)
+    else:
+        geocode_cache = {}
+
+    if os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'weather_cache.pkl')):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'weather_cache.pkl'), 'rb') as file:
+            weather_cache = pickle.load(file)
+    else:
+        weather_cache = {}
     main()
+    pickle.dump(geocode_cache, open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'geocode_cache.pkl'), 'wb'))
+    pickle.dump(weather_cache, open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'resources', 'weather_cache.pkl'), 'wb'))
