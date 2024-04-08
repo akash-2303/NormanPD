@@ -263,6 +263,13 @@ where file.csv consists of the urls
 To perform the test file use:
 `pytest`
 
+Note: In the video the code execution is pretty fast as I have the cache details. For new urls expect it to take two to five minutes. 
+
+
+https://github.com/akash-2303/cis6930sp24-assignment2/assets/67377539/4d3502e3-deb2-41ca-a9b9-043ab13c5678
+
+
+
 # Bugs and Assumptions
 I have dropped the empty cells. 
 For the first run, program might take two to five minutes to execute. 
