@@ -8,9 +8,14 @@ import re
 import sys
 import pickle
 import hashlib
+import urllib.request
+import requests
+
 
 import requests
-from geopy.geocoders import Nominatim
+#from geopy.geocoders import Nominatim
+from opencage.geocoder import OpenCageGeocode
+
 
 #Getting db connection
 def get_db_connection(db_path='normanpd.db'):
@@ -34,10 +39,21 @@ def lines_from_pages(pdf_reader):
     return list_lines
 
 #Read PDF from file path (Temporarily working with single file)
-file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-02-01_daily_incident_summary.pdf"
-def get_pdf_reader(file_path):
-    pdf_data = open(file_path, "rb")
-    pdf_reader = PdfReader(pdf_data)
+# file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-03-01_daily_incident_summary.pdf"
+
+def get_pdf_reader(url):
+
+
+    headers = {
+        'User-Agent': "Mozilla/5.0 (X11; Linux i686) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.27 Safari/537.17"
+    }
+
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as response:
+        data = response.read()
+
+    pdf_data = io.BytesIO(data)
+    pdf_reader = PdfReader(pdf_data) 
     return pdf_reader
 
 #Dataframe from extracted lines
@@ -54,7 +70,9 @@ def dataframe_from_lines(list_lines):
 
     #incident_time to datetime to extract day of the week and time of day
     df['incident_time'] = pd.to_datetime(df['incident_time'])
-    df['day_of_week'] = df['incident_time'].dt.dayofweek + 1 #1 = sunday, 7 = saturday
+    df['day_of_week'] = (df['incident_time'].dt.dayofweek + 1) % 7 + 1
+
+    # df['day_of_week'] = df['incident_time'].dt.dayofweek + 1 #1 = sunday, 7 = saturday
     df['time_of_day'] = df['incident_time'].dt.hour
 
     #incident_location to latitude and longitude
@@ -97,35 +115,92 @@ def save_csv(df, csv_file):
 def save_sql(df, conn):
     df.to_sql('incidents', conn, if_exists='replace', index=False)
 
-#Caching weather data
-def load_cache(cache_file):
-    if os.path.exists(os.path.join("../resources",cache_file)):
-         with open(os.path.join("../resources",cache_file), 'rb') as f:
-            return dict(pickle.load(f))
-    return {}
+# #Caching weather data
+# def load_cache(cache_file):
+#     if os.path.exists(os.path.join("resources",cache_file)):
+#          with open(os.path.join("resources",cache_file), 'rb') as f:
+#             return dict(pickle.load(f))
+#     return {}
 
-def save_cache(cache, cache_file):
-    with open(os.path.join("../resources",cache_file), 'wb') as f:
-        pickle.dump(cache, f)
+# def save_cache(cache, cache_file):
+#     with open(os.path.join("resources",cache_file), 'wb') as f:
+#         pickle.dump(cache, f)
 
-geocode_cache = load_cache('geocode_cache.pkl')
-weather_cache = load_cache('weather_cache.pkl')
+# geocode_cache = load_cache('geocode_cache.pkl')
+# weather_cache = load_cache('weather_cache.pkl')
 
 
 #Location latitude and longitudes and side of town
+geocoder = OpenCageGeocode('06093f9c5fcf4b6caf862218f0091f8f')
+
+def get_lat_lon_cache(incident_location):
+    if os.path.exists(os.path.join("resources", 'geocode_cache.pkl')):
+        return pickle.load(open(os.path.join("resources", 'geocode_cache.pkl'), 'rb'))
+    else:
+        return {}
+    
+    
+# def get_lat_lon(incident_location):
+#     # if incident_location in geocode_cache:
+#     #     return geocode_cache[incident_location]
+#     cache = get_lat_lon_cache(incident_location)
+#     if incident_location in cache:
+#         return cache[incident_location]
+#     query = incident_location + ', Norman, OK'
+#     result = geocoder.geocode(query)
+
+#     if result:
+#         latitude = result[0]['geometry']['lat']
+#         longitude = result[0]['geometry']['lng']
+#         #geocode_cache[incident_location] = (latitude, longitude)
+#         cache[incident_location] = (latitude, longitude)
+#         pickle.dump(cache, open(os.path.join("resources", 'geocode_cache.pkl'), 'wb'))
+#         return (latitude, longitude)
+#     else:
+#         #geocode_cache[incident_location] = (None, None)
+#         return (None, None)
 
 def get_lat_lon(incident_location):
-    if incident_location in geocode_cache:
-        return geocode_cache[incident_location]
+    # if incident_location in geocode_cache:
+    #     return geocode_cache[incident_location]
+    cache = get_lat_lon_cache(incident_location)
+    if incident_location in cache:
+        return cache[incident_location]
+    url = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
+    params = {
+        "f":"pjson",
+        "singleLine": incident_location,
+        "token": "AAPKe5546b6452e0425d8d54da8ffb8806990kyymB9V5RZoiQTmYAeDo5uv8M2X4lsea2BaqBQkzae6cjoidi4MQV5jxrYWTwYk"
+        }
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if len(data['candidates']) == 0:
+                return (None, None)
+            latitude = data['candidates'][0]['location']['y']
+            longitude = data['candidates'][0]['location']['x']
+            cache[incident_location] = (latitude, longitude)
+            pickle.dump(cache, open(os.path.join("resources", 'geocode_cache.pkl'), 'wb'))
+            return (latitude, longitude)
+        else:
+            return (None, None)
+    except requests.exceptions.RequestException as e:
+        return (None, None)
+
+
+# def get_lat_lon(incident_location):
+#     if incident_location in geocode_cache:
+#         return geocode_cache[incident_location]
     
-    geolocator = Nominatim(user_agent="assignment2", timeout=10)
-    location = geolocator.geocode(incident_location + ', Norman, OK')
-    if location:
-        result = (location.latitude, location.longitude)
-    else:
-        result = (None, None)
-    geocode_cache[incident_location] = result
-    return result    
+#     geolocator = Nominatim(user_agent="assignment2", timeout=10)
+#     location = geolocator.geocode(incident_location + ', Norman, OK')
+#     if location:
+#         result = (location.latitude, location.longitude)
+#     else:
+#         result = (None, None)
+#     geocode_cache[incident_location] = result
+#     return result    
 
 
 def get_side_of_town(latitude, longitude):
@@ -153,42 +228,51 @@ def get_side_of_town(latitude, longitude):
     else:
         return 'Unknown'
 
-
+def get_weather_cache(latitude, longitude, date):
+    if os.path.exists(os.path.join("resources", 'weather_cache.pkl')):
+        return pickle.load(open(os.path.join("resources", 'weather_cache.pkl'), 'rb'))
+    else:
+        return {}
+    
 #weather data
 def get_weather(latitude, longitude, datetime):
     if latitude is None or longitude is None:
         return None
     key = (latitude, longitude, datetime.strftime('%Y-%m-%d'))
-    if key in weather_cache:
-        return weather_cache[key]
+    # if key in weather_cache:
+    #     return weather_cache[key]
 
     date_str = datetime.strftime('%Y-%m-%d')
     time_str = datetime.strftime('%H')
-
-    params = {
-        'latitude': latitude,
-        'longitude': longitude,
-        'start_date': date_str,
-        'end_date': date_str,
-        'hourly': 'weather_code'
-    }
-    try:
-        response = requests.get('https://archive-api.open-meteo.com/v1/archive', params=params)
-        if response.status_code == 200:
-            data = response.json()
-            weather_code = data['hourly']['weather_code'][int(time_str)]
-            # return weather_code
-        else:
-            # return None
+    cache = get_weather_cache(latitude, longitude, date_str)
+    if key in cache:
+        return cache[key]
+    else:
+        params = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'start_date': date_str,
+            'end_date': date_str,
+            'hourly': 'weather_code'
+        }
+        try:
+            response = requests.get('https://archive-api.open-meteo.com/v1/archive', params=params)
+            if response.status_code == 200:
+                data = response.json()
+                weather_code = data['hourly']['weather_code'][int(time_str)]
+                # return weather_code
+            else:
+                # return None
+                weather_code = None
+        except requests.exceptions.RequestException as e:
             weather_code = None
-    except requests.exceptions.RequestException as e:
-        weather_code = None
-
-    weather_cache[key] = weather_code
-    return weather_code
+        cache[key] = weather_code
+        pickle.dump(cache, open(os.path.join("resources", 'weather_cache.pkl'), 'wb'))
+        # weather_cache[key] = weather_code
+        return weather_code
    
-save_cache(geocode_cache, 'geocode_cache.pkl')
-save_cache(weather_cache, 'weather_cache.pkl')
+# save_cache(geocode_cache, 'geocode_cache.pkl')
+# save_cache(weather_cache, 'weather_cache.pkl')
     
     #     print("Data received:", data)  # Debugging line
     #     try:
@@ -237,14 +321,14 @@ def get_pdf_hash(file_path):
     return None
 
 def load_final_df_cache(cache_file):
-    cache_file_path = os.path.join("../resources", cache_file)
+    cache_file_path = os.path.join("resources", cache_file)
     if os.path.exists(cache_file_path):
         with open(cache_file_path, 'rb') as f:
             return pickle.load(f)
     return None
 
 def save_final_df_cache(df, cache_file):
-    cache_file_path = os.path.join("../resources", cache_file)
+    cache_file_path = os.path.join("resources", cache_file)
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)  # Create the directory if it doesn't exist
     with open(cache_file_path, 'wb') as f:
         pickle.dump(df, f)
@@ -253,43 +337,48 @@ def save_final_df_cache(df, cache_file):
 
 def main():
     parser = argparse.ArgumentParser(description='Process PDF for incident data.')
-    parser.add_argument('--csv', type=str, help='Path to save the CSV file')
-    parser.add_argument('--db', type=str, help='Path to the SQLite database file')
+    parser.add_argument('--urls', type=str, help='')
+
     args = parser.parse_args()
+    file_path = args.urls
 
+    urls = pd.read_csv(file_path, header=None)
+    lst_urls = urls[0].tolist()
     # Hardcoded PDF path
-    file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-02-01_daily_incident_summary.pdf"
+    # file_path = "C:/Users/Akash Balaji/Downloads/DATA ENGINEERING/cis6930sp24-assignment2/2024-03-01_daily_incident_summary.pdf"
 
+    # print(lst_urls)
+    # pdf_hash = get_pdf_hash(lst_urls[0])
 
-    pdf_hash = get_pdf_hash(file_path)
+    # final_df_cache_file = f'final_df_cache_{pdf_hash}.pkl'
+    # final_df = load_final_df_cache(final_df_cache_file)
 
-    final_df_cache_file = f'final_df_cache_{pdf_hash}.pkl'
-    final_df = load_final_df_cache(final_df_cache_file)
-
-    if final_df is None: 
-        pdf_reader = get_pdf_reader(file_path)
-        list_lines = lines_from_pages(pdf_reader)
+    lst_df = []
+    for url in lst_urls:
+        
+        pdf_file_data = get_pdf_reader(url)
+        list_lines = lines_from_pages(pdf_file_data)
         df = dataframe_from_lines(list_lines)
-        final_df = df
-        save_final_df_cache(final_df, final_df_cache_file)
-    else:
-        df = final_df
+        lst_df.append(df)
+    
+    final_df = pd.concat(lst_df, axis = 0)
+    # if args.csv:
+    #     save_csv(df, args.csv)
 
-    if args.csv:
-        save_csv(df, args.csv)
-
-    if args.db:
-        conn = get_db_connection(args.db)
-        save_sql(df, conn)
-        conn.close()
-
+    # if args.db:
+    #     conn = get_db_connection(args.db)
+    #     save_sql(df, conn)
+    #     conn.close()
+    final_df.to_csv('output.csv', index=False)
     # Ensure all required columns are included
     output_columns = ['day_of_week', 'time_of_day', 'weather_code', 'location_rank', 'side_of_town', 'incident_rank', 'nature', 'EMSSTAT']
     final_df = final_df[output_columns]
     
     # Output the DataFrame to stdout with the header
     #final_df.to_csv(sys.stdout, index=False, header=True)
-    print(final_df.to_string(index=False))
+
+    for row in final_df.itertuples(index=False):
+        sys.stdout.write("\t".join(map(str, row)) + "\n")
     
 if __name__ == '__main__':
     main()

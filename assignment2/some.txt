@@ -1,0 +1,2 @@
+
+curl https://www.arcgis.com/sharing/rest/generateToken -d 'f=json' -d 'username=akash' -d 'password=akash123' -d 'referer=https://www.arcgis.com' -d 'client=referer'
