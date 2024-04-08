@@ -175,6 +175,7 @@ def get_lat_lon(incident_location):
         if response.status_code == 200:
             data = response.json()
             if len(data['candidates']) == 0:
+                geocode_cache[incident_location] = (None, None)
                 return (None, None)
             latitude = data['candidates'][0]['location']['y']
             longitude = data['candidates'][0]['location']['x']
@@ -182,8 +183,10 @@ def get_lat_lon(incident_location):
             # pickle.dump(cache, open(os.path.join("resources", 'geocode_cache.pkl'), 'wb'))
             return (latitude, longitude)
         else:
+            geocode_cache[incident_location] = (None, None)
             return (None, None)
     except requests.exceptions.RequestException as e:
+        geocode_cache[incident_location] = (None, None)
         return (None, None)
 
 
